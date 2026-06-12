@@ -489,6 +489,11 @@ export class DatasetService implements vscode.Disposable {
     await writeJsonl(epPath, eps);
 
     // 2. Rename parquet + video files for episodes that got new indices.
+    // The deleted episode's frame count must be subtracted from the global
+    // `index` column of all subsequent episodes to keep it contiguous.
+    const deletedFrameCount = snapshot.episodes.find(
+      (e) => e.episodeIndex === deletedIdx,
+    )?.length ?? 0;
     const chunkSize = snapshot.info.chunksSize ?? 1000;
     for (const [oldIdx, newIdx] of oldToNew) {
       if (oldIdx === newIdx) continue;
@@ -507,8 +512,9 @@ export class DatasetService implements vscode.Disposable {
       if (await exists(oldData) && oldData !== newData) {
         await fs.mkdir(path.dirname(newData), { recursive: true });
         await fs.rename(oldData, newData);
-        // Update episode_index column inside the parquet to match the new index.
-        await this.fixEpisodeIndex(newData, newIdx);
+        // Update episode_index and index columns inside the parquet.
+        const indexOffset = oldIdx > deletedIdx ? -deletedFrameCount : 0;
+        await this.fixEpisodeIndex(newData, newIdx, indexOffset);
       }
       // Rename videos.
       const vidTpl = snapshot.info.videoPath ?? "videos/chunk-{episode_chunk:03d}/{video_key}/episode_{episode_index:06d}.mp4";
@@ -561,7 +567,7 @@ export class DatasetService implements vscode.Disposable {
     }
   }
 
-  private async fixEpisodeIndex(parquetPath: string, newIndex: number): Promise<void> {
+  private async fixEpisodeIndex(parquetPath: string, newIndex: number, indexOffset = 0): Promise<void> {
     try {
       const { parquetReadObjects, asyncBufferFromFile } = await import("hyparquet");
       const pjs = require("parquetjs");
@@ -569,8 +575,14 @@ export class DatasetService implements vscode.Disposable {
       const rows = (await parquetReadObjects({ file: buffer })) as Record<string, unknown>[];
       if (rows.length === 0) return;
 
-      // Update episode_index in every row.
-      for (const r of rows) r.episode_index = newIndex;
+      // Update episode_index in every row. Also shift the global `index`
+      // column by the offset (negative when an earlier episode was deleted).
+      for (const r of rows) {
+        r.episode_index = newIndex;
+        if (indexOffset !== 0 && "index" in r) {
+          r.index = Number(r.index) + indexOffset;
+        }
+      }
 
       // Use buildParquetSchema to preserve correct column types
       // (INTERNAL_TYPES maps timestamp→DOUBLE, episode_index→INT64, etc.).

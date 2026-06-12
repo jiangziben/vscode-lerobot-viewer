@@ -98,7 +98,7 @@ export async function mergeDatasets(
     const srcSnapshot = ep._srcSnapshot!;
     const srcEp = ep._srcEpisode!;
 
-    // ---- data parquet (rewrite with correct episode_index) ----
+    // ---- data parquet (rewrite with correct episode_index, index, task_index) ----
     const srcDataPath = resolveSourceDataPath(srcSnapshot, srcEp);
     if (srcDataPath && (await exists(srcDataPath))) {
       const dstDataRel = buildDataPath({
@@ -111,7 +111,9 @@ export async function mergeDatasets(
       onProgress({ done, total, current: `Copying parquet for episode ${ep.episodeIndex}` });
       await fs.mkdir(path.dirname(dstDataPath), { recursive: true });
       const remap = taskRemap.get(srcSnapshot.descriptor.id);
-      await copyParquetWithEpisodeIndex(srcDataPath, dstDataPath, ep.episodeIndex, remap);
+      // Offset the global `index` column by this source's cumulative frame count.
+      const indexOffset = getSourceFrameOffset(snapshots, srcSnapshot);
+      await copyParquetWithEpisodeIndex(srcDataPath, dstDataPath, ep.episodeIndex, remap, indexOffset);
     }
 
     // ---- video files ----
@@ -508,11 +510,28 @@ function unionCameraKeys(snapshots: DatasetSnapshot[]): string[] {
  * episode_index values, causing duplicates (two files with ep_index=0) and
  * missing episodes (no file with ep_index=60).
  */
+/**
+ * Compute the total frame count of all snapshots before `target`.
+ * Used to offset the global `index` column during merge.
+ */
+function getSourceFrameOffset(
+  snapshots: DatasetSnapshot[],
+  target: DatasetSnapshot,
+): number {
+  let offset = 0;
+  for (const snap of snapshots) {
+    if (snap.descriptor.id === target.descriptor.id) break;
+    offset += snap.episodes.reduce((s, e) => s + (e.length || 0), 0);
+  }
+  return offset;
+}
+
 async function copyParquetWithEpisodeIndex(
   srcPath: string,
   dstPath: string,
   newIndex: number,
   taskRemap?: Map<number, number>,
+  indexOffset = 0,
 ): Promise<void> {
   try {
     const { parquetReadObjects, asyncBufferFromFile } = await getHyparquet();
@@ -521,7 +540,7 @@ async function copyParquetWithEpisodeIndex(
     const buffer = await asyncBufferFromFile(srcPath);
     const rows = (await parquetReadObjects({ file: buffer })) as Record<string, unknown>[];
 
-    // Update episode_index, task_index, and convert BigInt to Number.
+    // Update episode_index, index, task_index, and convert BigInt to Number.
     for (const r of rows) {
       r.episode_index = newIndex;
       for (const [k, v] of Object.entries(r)) {
@@ -530,6 +549,9 @@ async function copyParquetWithEpisodeIndex(
       if (taskRemap && "task_index" in r) {
         const oldTi = Number(r.task_index);
         if (taskRemap.has(oldTi)) r.task_index = taskRemap.get(oldTi)!;
+      }
+      if ("index" in r && indexOffset > 0) {
+        r.index = Number(r.index) + indexOffset;
       }
     }
 
