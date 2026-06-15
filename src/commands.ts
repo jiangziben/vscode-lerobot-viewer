@@ -16,7 +16,9 @@ import {
   pickRemoteFolder,
   sshDatasetId,
 } from "./dataset/ssh";
+import * as path from "node:path";
 import * as posix from "node:path/posix";
+import { exists } from "./dataset/adapters/util";
 import { launchRerun } from "./rerun/rerunLauncher";
 import { mergeDatasets } from "./dataset/mergeDataset";
 import { convertV3ToV21 } from "./dataset/convertV3ToV21";
@@ -52,6 +54,7 @@ export const CommandIds = {
   renameFeature: "lerobotViewer.renameFeature",
   convertToV30: "lerobotViewer.convertToV30",
   renameDataset: "lerobotViewer.renameDataset",
+  saveAsDataset: "lerobotViewer.saveAsDataset",
 } as const;
 
 interface PreviewArgs {
@@ -839,6 +842,49 @@ export function registerCommands(
     } catch (err) {
       void vscode.window.showErrorMessage(`Failed: ${(err as Error).message}`);
     }
+  });
+
+  reg(CommandIds.saveAsDataset, async (...args: unknown[]) => {
+    const arg = args[0];
+    const datasetId = isDatasetNode(arg) ? arg.descriptor.id : undefined;
+    if (!datasetId) return;
+    const descriptor = service.get(datasetId);
+    if (!descriptor || !descriptor.root) return;
+
+    const newName = await vscode.window.showInputBox({
+      prompt: "New dataset name",
+      value: descriptor.name,
+      validateInput: (v) =>
+        !v?.trim() ? "Name cannot be empty" : /[<>:"/\\|?*]/.test(v) ? "Name contains invalid characters" : undefined,
+    });
+    if (!newName?.trim()) return;
+
+    const targetUri = await vscode.window.showOpenDialog({
+      canSelectFolders: true,
+      canSelectFiles: false,
+      canSelectMany: false,
+      openLabel: "Select destination folder",
+      title: `Save "${newName}" to...`,
+    });
+    if (!targetUri || targetUri.length === 0) return;
+
+    const dstRoot = path.join(targetUri[0].fsPath, newName.trim());
+    if (await exists(dstRoot)) {
+      void vscode.window.showErrorMessage(`"${newName}" already exists in the destination.`);
+      return;
+    }
+
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: `Copying to ${newName}...` },
+      async (progress) => {
+        const { copyDataset } = await import("./dataset/datasetCopy");
+        await copyDataset(descriptor.root!, dstRoot, (msg) =>
+          progress.report({ message: msg }),
+        );
+      },
+    );
+    await service.addLocalFolder(vscode.Uri.file(dstRoot));
+    void vscode.window.showInformationMessage(`Saved as "${newName}"`);
   });
 
   reg(CommandIds.renameDataset, async (...args: unknown[]) => {

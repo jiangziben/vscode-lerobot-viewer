@@ -180,6 +180,11 @@
         "command": "lerobotViewer.renameDataset",
         "title": "LeRobot: Rename Dataset",
         "icon": "$(edit)"
+      },
+      {
+        "command": "lerobotViewer.saveAsDataset",
+        "title": "LeRobot: Save Dataset As...",
+        "icon": "$(save-as)"
       }
     ],
     "menus": {
@@ -285,6 +290,11 @@
           "command": "lerobotViewer.renameDataset",
           "when": "view == lerobotViewer.datasets && viewItem == lerobotDataset",
           "group": "1_modify@8"
+        },
+        {
+          "command": "lerobotViewer.saveAsDataset",
+          "when": "view == lerobotViewer.datasets && viewItem == lerobotDataset",
+          "group": "2_manage@1"
         },
         {
           "command": "lerobotViewer.recomputeStats",
