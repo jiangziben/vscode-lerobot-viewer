@@ -80,6 +80,13 @@ export class EpisodePreviewPanelManager implements vscode.Disposable {
     }
   }
 
+  /** Refresh the preview if it's showing the given dataset. */
+  async refreshIfDataset(datasetId: string): Promise<void> {
+    if (this.panel) {
+      await this.panel.refreshIfNeeded();
+    }
+  }
+
   dispose(): void {
     this.panel?.dispose();
     this.panel = undefined;
@@ -104,7 +111,7 @@ class EpisodePreviewPanel extends BaseWebviewPanel {
     this.descriptor = descriptor;
   }
 
-  private datasetId: string;
+  datasetId: string;
   private descriptor: { id: string; name: string; root?: string };
   private _initialized = false;
   /** Video file paths currently served via HTTP servers — stopped on switch. */
@@ -155,9 +162,17 @@ class EpisodePreviewPanel extends BaseWebviewPanel {
     void this.refreshPreview();
   }
 
+  /** Public wrapper so the manager can trigger a refresh. */
+  async refreshIfNeeded(): Promise<void> {
+    await this.refreshPreview();
+  }
+
   private async refreshPreview(): Promise<void> {
     try {
       const snapshot = await this.service.getSnapshot(this.datasetId);
+      // Refresh episode from the new snapshot (tasks may have changed).
+      const ep = snapshot.episodes.find((e) => e.episodeIndex === this.episode.episodeIndex);
+      if (ep) this.episode = ep;
       const meta = await this.buildMeta(snapshot);
       this.post({ type: "init-meta", data: meta });
       const signals = await this.buildSignals(snapshot);

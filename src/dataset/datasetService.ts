@@ -400,8 +400,60 @@ export class DatasetService implements vscode.Disposable {
     }
     rec.tasks = taskNames;
     await adapter.saveEpisodeRecords!(root, epRecords);
+
+    // Also update task_index in the parquet file so the preview's
+    // TaskBand and training data see the correct task assignment.
+    const snapshot = await this.getSnapshot(datasetId);
+    const taskIdx = taskNames.length > 0
+      ? snapshot.tasks.find((t) => t.task === taskNames[0])?.taskIndex
+      : undefined;
+    if (taskIdx !== undefined) {
+      const info = snapshot.info;
+      const ep = snapshot.episodes.find((e) => e.episodeIndex === episodeIndex);
+      if (ep) {
+        const chunksSize = info.chunksSize ?? 1000;
+        const chunkIdx = Math.floor(episodeIndex / chunksSize);
+        const dataRel = buildDataPath({
+          template: info.dataPath ?? "data/chunk-{episode_chunk:03d}/episode_{episode_index:06d}.parquet",
+          chunkIndex: chunkIdx,
+          fileIndex: 0,
+          episodeIndex,
+        });
+        const dataPath = path.join(root, dataRel);
+        if (await exists(dataPath)) {
+          await this.setParquetTaskIndex(dataPath, taskIdx);
+        }
+      }
+    }
+
     this.snapshotCache.delete(datasetId);
     log(`Set episode ${episodeIndex} tasks to [${taskNames.join(", ")}] in dataset ${datasetId}`);
+  }
+
+  /** Rewrite the task_index column in a single-episode parquet file. */
+  private async setParquetTaskIndex(parquetPath: string, taskIdx: number): Promise<void> {
+    try {
+      const { parquetReadObjects, asyncBufferFromFile } = await import("hyparquet");
+      const pjs = require("parquetjs");
+      const buffer = await asyncBufferFromFile(parquetPath);
+      const rows = (await parquetReadObjects({ file: buffer })) as Record<string, unknown>[];
+      if (rows.length === 0) return;
+      for (const r of rows) {
+        r.task_index = taskIdx;
+        for (const [k, v] of Object.entries(r)) {
+          if (typeof v === "bigint") (r as any)[k] = Number(v);
+        }
+      }
+      const schemaFields = buildParquetSchema(rows[0]);
+      const schema = new pjs.ParquetSchema(schemaFields);
+      const tmpPath = parquetPath + ".tmp";
+      const writer = await pjs.ParquetWriter.openFile(schema, tmpPath, { compression: "UNCOMPRESSED" });
+      for (const row of rows) await writer.appendRow(row);
+      await writer.close();
+      await fs.rename(tmpPath, parquetPath);
+    } catch (err) {
+      logError(`setParquetTaskIndex for ${parquetPath}`, err);
+    }
   }
 
   /** Scan workspace folders for datasets up to a configurable depth. */

@@ -228,6 +228,9 @@ export function registerCommands(
       return;
     }
     await runTaskEditor(service, datasetId);
+    service.invalidate(datasetId);
+    tree.refresh();
+    await previews.refreshIfDataset(datasetId);
   });
 
   reg(CommandIds.editEpisodeTasks, async () => {
@@ -242,6 +245,9 @@ export function registerCommands(
     const datasetId = nodes[0].datasetId;
     const episodeIndices = nodes.map((n) => n.episode.episodeIndex);
     await runEpisodeTaskPicker(service, datasetId, episodeIndices);
+    service.invalidate(datasetId);
+    tree.refresh();
+    await previews.refreshIfDataset(datasetId);
   });
 
   reg(CommandIds.mergeDatasets, async () => {
@@ -1042,6 +1048,8 @@ async function runAddTask(
 
   try {
     await service.addTask(datasetId, name.trim());
+    service.invalidate(datasetId);
+    tree.refresh();
     void vscode.window.showInformationMessage(`Task "${name.trim()}" added.`);
   } catch (err) {
     void vscode.window.showErrorMessage(`Failed to add task: ${(err as Error).message}`);
@@ -1078,6 +1086,8 @@ async function runRenameTask(
 
   try {
     await service.renameTask(datasetId, oldName, newName.trim());
+    service.invalidate(datasetId);
+    tree.refresh();
     void vscode.window.showInformationMessage(`Task renamed: "${oldName}" → "${newName.trim()}"`);
   } catch (err) {
     void vscode.window.showErrorMessage(`Failed to rename task: ${(err as Error).message}`);
@@ -1113,6 +1123,8 @@ async function runReindexTask(
   if (!newIdxStr) return;
   try {
     await service.reindexTask(datasetId, taskName, parseInt(newIdxStr, 10));
+    service.invalidate(datasetId);
+    tree.refresh();
     void vscode.window.showInformationMessage(`Task "${taskName}" reindexed to [${newIdxStr}].`);
   } catch (err) {
     void vscode.window.showErrorMessage(`Failed: ${(err as Error).message}`);
@@ -1138,6 +1150,8 @@ async function runDeleteTask(
 
   try {
     await service.deleteTask(datasetId, taskName);
+    service.invalidate(datasetId);
+    tree.refresh();
     void vscode.window.showInformationMessage(`Task "${taskName}" deleted.`);
   } catch (err) {
     void vscode.window.showErrorMessage(`Failed to delete task: ${(err as Error).message}`);
@@ -1237,6 +1251,7 @@ async function runEpisodeTaskPicker(
     for (const idx of episodeIndices) {
       await service.setEpisodeTasks(datasetId, idx, newTasks);
     }
+    service.invalidate(datasetId);
     const suffix = newTasks.length === 0
       ? "all tasks removed"
       : `assigned to "${newTasks.join(", ")}"`;
