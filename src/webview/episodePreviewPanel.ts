@@ -196,7 +196,6 @@ class EpisodePreviewPanel extends BaseWebviewPanel {
         return;
       }
       case "frame-changed":
-        // Reserved for future bidirectional sync (timeline ↔ Rerun).
         return;
     }
   }

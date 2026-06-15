@@ -83,6 +83,11 @@
       },
       {
         "command": "lerobotViewer.deleteEpisode",
+        "title": "LeRobot: Delete Episode(s)",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "lerobotViewer.deleteEpisodeInline",
         "title": "LeRobot: Delete Episode",
         "icon": "$(trash)"
       },
@@ -222,7 +227,7 @@
           "group": "inline@1"
         },
         {
-          "command": "lerobotViewer.deleteEpisode",
+          "command": "lerobotViewer.deleteEpisodeInline",
           "when": "view == lerobotViewer.datasets && viewItem == lerobotEpisode",
           "group": "inline@2"
         },

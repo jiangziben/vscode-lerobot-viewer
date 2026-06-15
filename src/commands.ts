@@ -31,6 +31,7 @@ export const CommandIds = {
   openDataset: "lerobotViewer.openDataset",
   previewEpisode: "lerobotViewer.previewEpisode",
   deleteEpisode: "lerobotViewer.deleteEpisode",
+  deleteEpisodeInline: "lerobotViewer.deleteEpisodeInline",
   openMetadata: "lerobotViewer.openMetadata",
   openInRerun: "lerobotViewer.openInRerun",
   addDatasetFolder: "lerobotViewer.addDatasetFolder",
@@ -777,12 +778,7 @@ export function registerCommands(
 
 
   reg(CommandIds.deleteEpisode, async (...args: unknown[]) => {
-    // Inline click passes the EpisodeNode as args[0]; context menu uses selection.
-    const arg = args[0];
-    let nodes = extractEpisodeNodesFromSelection(treeView.selection);
-    if (nodes.length === 0 && isEpisodeNode(arg)) {
-      nodes = [arg];
-    }
+    const nodes = extractEpisodeNodesFromSelection(treeView.selection);
     if (nodes.length === 0) {
       void vscode.window.showInformationMessage("Select one or more episodes to delete.");
       return;
@@ -821,6 +817,27 @@ export function registerCommands(
       void vscode.window.showErrorMessage(
         `Deleted ${deleted}/${indices.length} episodes. Last error: ${lastErr}`,
       );
+    }
+  });
+
+  // Inline delete: always deletes only the clicked episode, ignoring selection.
+  reg(CommandIds.deleteEpisodeInline, async (...args: unknown[]) => {
+    const arg = args[0];
+    if (!isEpisodeNode(arg)) return;
+    const datasetId = arg.datasetId;
+    const epIdx = arg.episode.episodeIndex;
+    const choice = await vscode.window.showWarningMessage(
+      `Delete episode ${epIdx}? This permanently removes the episode files from disk.`,
+      { modal: true },
+      "Delete",
+    );
+    if (choice !== "Delete") return;
+    try {
+      await service.deleteEpisode(datasetId, epIdx);
+      tree.refresh();
+      void vscode.window.showInformationMessage(`Deleted episode ${epIdx}.`);
+    } catch (err) {
+      void vscode.window.showErrorMessage(`Failed: ${(err as Error).message}`);
     }
   });
 
