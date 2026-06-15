@@ -415,6 +415,8 @@ async function sliceVideo(
   // info.json (via parameter) to avoid a per-file ffprobe call.
   const canCopy = !codec || codec === "h264" || codec === "hevc" || codec === "mpeg4";
   // -ss after -i: -to is absolute position in the source, NOT duration.
+  // Step 1: slice with -c copy (or re-encode for AV1 etc.)
+  const tmpPath = dstPath + ".tmp.mp4";
   if (canCopy) {
     await execFile("ffmpeg", [
       "-i", srcPath,
@@ -423,21 +425,46 @@ async function sliceVideo(
       "-c", "copy",
       "-avoid_negative_ts", "make_zero",
       "-y",
-      dstPath,
+      tmpPath,
     ]);
   } else {
-    await execFile("ffmpeg", [
-      "-i", srcPath,
-      "-ss", fromTs.toFixed(6),
-      "-to", toTs.toFixed(6),
-      "-c:v", "mpeg4",
-      "-q:v", "2",
-      "-c:a", "copy",
-      "-avoid_negative_ts", "make_zero",
-      "-y",
-      dstPath,
-    ]);
+    try {
+      await execFile("ffmpeg", [
+        "-i", srcPath,
+        "-ss", fromTs.toFixed(6),
+        "-to", toTs.toFixed(6),
+        "-c:v", "libx264",
+        "-preset", "ultrafast",
+        "-c:a", "copy",
+        "-avoid_negative_ts", "make_zero",
+        "-y",
+        tmpPath,
+      ]);
+    } catch {
+      await execFile("ffmpeg", [
+        "-i", srcPath,
+        "-ss", fromTs.toFixed(6),
+        "-to", toTs.toFixed(6),
+        "-c:v", "mpeg4",
+        "-q:v", "2",
+        "-c:a", "copy",
+        "-avoid_negative_ts", "make_zero",
+        "-y",
+        tmpPath,
+      ]);
+    }
   }
+  // Step 2: regenerate clean PTS from 0 so the file can be safely
+  // concatenated later (avoids "non monotonically increasing dts").
+  await execFile("ffmpeg", [
+    "-i", tmpPath,
+    "-c", "copy",
+    "-fflags", "+genpts",
+    "-reset_timestamps", "1",
+    "-y",
+    dstPath,
+  ]);
+  await fs.unlink(tmpPath).catch(() => {});
 }
 
 // ---- info.json generation ----
