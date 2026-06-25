@@ -20,7 +20,8 @@ export interface ConvertProgress { done: number; total: number; current: string;
 export async function convertV21ToV30(
   sourceRoot: string, targetRoot: string,
   onProgress: (p: ConvertProgress) => void,
-): Promise<void> {
+): Promise<string[]> {
+  const warnings: string[] = [];
   const adapter = new V21Adapter();
   const info = await adapter.loadInfo(sourceRoot);
   const episodes = await adapter.loadEpisodes({ root: sourceRoot, info });
@@ -33,6 +34,13 @@ export async function convertV21ToV30(
   // Check ffmpeg for video concatenation.
   let ffmpegOk = false;
   try { await execFile("ffmpeg", ["-version"]); ffmpegOk = true; } catch { /* ok */ }
+  if (!ffmpegOk) {
+    warnings.push(
+      "ffmpeg is not installed or not in PATH. " +
+      "Video features will be skipped during conversion. " +
+      "Install ffmpeg to include video conversion (e.g. `sudo apt install ffmpeg`)."
+    );
+  }
 
   // Target dirs.
   await fs.mkdir(path.join(targetRoot, "meta", "episodes"), { recursive: true });
@@ -103,6 +111,7 @@ export async function convertV21ToV30(
   }
 
   onProgress({ done: total, total, current: "Done." });
+  return warnings;
 }
 
 // ---- Data shard building ----

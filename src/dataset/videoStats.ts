@@ -116,7 +116,7 @@ export async function computeVideoFeatureStats(
 
 // ---- internal ----
 
-function ffmpegAvailable(): Promise<boolean> {
+export function ffmpegAvailable(): Promise<boolean> {
   return new Promise((resolve) => {
     const proc = cp.spawn("ffmpeg", ["-version"], { stdio: "ignore" });
     proc.on("close", (code) => resolve(code === 0));

@@ -6,7 +6,7 @@ import * as path from "node:path";
 import { V21Adapter } from "./adapters/V21Adapter";
 import { V30Adapter } from "./adapters/V30Adapter";
 import { exists, readJson, buildDataPath } from "./adapters/util";
-import { computeVideoFeatureStats } from "./videoStats";
+import { computeVideoFeatureStats, ffmpegAvailable } from "./videoStats";
 import { writeStatsJsonl, floatifyArraysInJson } from "./statsJson";
 import type { LeRobotInfo, LeRobotEpisode } from "../types";
 
@@ -23,7 +23,8 @@ export interface StatsProgress {
 export async function recomputeStats(
   root: string,
   onProgress: (p: StatsProgress) => void,
-): Promise<void> {
+): Promise<string[]> {
+  const warnings: string[] = [];
   // Detect version and use appropriate adapter.
   const { detectDatasetVersion } = await import("./DatasetVersionDetector");
   const version = (await detectDatasetVersion(root)).version;
@@ -98,6 +99,13 @@ export async function recomputeStats(
   const videoKeys = Object.keys(info.features).filter(
     (k) => info.features[k]?.dtype === "video",
   );
+  if (videoKeys.length > 0 && !(await ffmpegAvailable())) {
+    warnings.push(
+      "ffmpeg is not installed or not in PATH. " +
+      "Video/image feature statistics will be skipped. " +
+      "Install ffmpeg to include per-channel RGB stats (e.g. `sudo apt install ffmpeg`)."
+    );
+  }
   for (const vk of videoKeys) {
     onProgress({ done: 0, total: 0 }); // signal video phase
     const vStats = await computeVideoFeatureStats(root, vk, (p) => {
@@ -134,6 +142,7 @@ export async function recomputeStats(
   } else {
     await writeStatsJsonl(path.join(root, "meta", "episodes_stats.jsonl"), epStatsRecords);
   }
+  return warnings;
 }
 
 function resolveV3DataPath(

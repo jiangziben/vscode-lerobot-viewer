@@ -390,8 +390,7 @@ export function registerCommands(
 
       let msg = `Converted to v2.1: ${result.totalEpisodes} episodes, ${result.totalFrames} frames.`;
       if (result.warnings.length > 0) {
-        msg += ` (${result.warnings.length} warning${result.warnings.length > 1 ? "s" : ""})`;
-        log(`v3→v2.1 warnings for ${descriptor.name}: ${result.warnings.join("; ")}`);
+        void vscode.window.showWarningMessage(result.warnings.join(" "));
       }
       void vscode.window.showInformationMessage(msg);
 
@@ -658,11 +657,12 @@ export function registerCommands(
       return;
     }
     try {
+      let warnings: string[] = [];
       await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Notification, title: "Computing stats", cancellable: false },
         async (progress) => {
           let last = 0;
-          await recomputeStats(descriptor.root!, (p) => {
+          warnings = await recomputeStats(descriptor.root!, (p) => {
             if (p.done - last >= 1 || p.done === p.total) {
               last = p.done;
               progress.report({ message: `${p.done}/${p.total} episodes` });
@@ -671,6 +671,9 @@ export function registerCommands(
         },
       );
       service.invalidate(datasetId);
+      if (warnings.length > 0) {
+        void vscode.window.showWarningMessage(warnings.join(" "));
+      }
       void vscode.window.showInformationMessage("Stats recomputed.");
     } catch (err) {
       void vscode.window.showErrorMessage(`Failed: ${(err as Error).message}`);
@@ -766,11 +769,12 @@ export function registerCommands(
     const targetRoot = targetUri[0].fsPath;
 
     try {
+      let warnings: string[] = [];
       await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Notification, title: `Converting ${descriptor.name} to v3.0`, cancellable: false },
         async (progress) => {
           let last = 0;
-          await convertV21ToV30(descriptor.root!, targetRoot, (p) => {
+          warnings = await convertV21ToV30(descriptor.root!, targetRoot, (p) => {
             if (p.done - last >= 1 || p.done === p.total) {
               last = p.done;
               progress.report({ message: p.current || `${p.done}/${p.total}` });
@@ -778,6 +782,9 @@ export function registerCommands(
           });
         },
       );
+      if (warnings.length > 0) {
+        void vscode.window.showWarningMessage(warnings.join(" "));
+      }
       void vscode.window.showInformationMessage(`Converted to v3.0 at ${targetRoot}.`);
       await service.addLocalFolder(vscode.Uri.file(targetRoot));
     } catch (err) {
