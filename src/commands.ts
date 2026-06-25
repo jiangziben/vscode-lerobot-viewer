@@ -227,7 +227,7 @@ export function registerCommands(
       void vscode.window.showInformationMessage("Use the context menu on a dataset to edit its tasks.");
       return;
     }
-    await runTaskEditor(service, datasetId);
+    await runTaskEditor(service, datasetId, tree);
     service.invalidate(datasetId);
     tree.refresh();
     await previews.refreshIfDataset(datasetId);
@@ -936,7 +936,7 @@ interface TaskActionItem extends vscode.QuickPickItem {
   taskName?: string;
 }
 
-async function runTaskEditor(service: DatasetService, datasetId: string): Promise<void> {
+async function runTaskEditor(service: DatasetService, datasetId: string, tree: DatasetTreeProvider): Promise<void> {
   const descriptor = service.get(datasetId);
   if (!descriptor) return;
 
@@ -948,13 +948,13 @@ async function runTaskEditor(service: DatasetService, datasetId: string): Promis
 
   try {
     const snapshot = await service.getSnapshot(datasetId);
-    await showMainMenu(service, datasetId, snapshot.tasks);
+    await showMainMenu(service, datasetId, snapshot.tasks, tree);
   } catch (err) {
     void vscode.window.showErrorMessage(`Could not edit tasks: ${(err as Error).message}`);
   }
 }
 
-async function showMainMenu(service: DatasetService, datasetId: string, tasks: { taskIndex: number; task: string }[]): Promise<void> {
+async function showMainMenu(service: DatasetService, datasetId: string, tasks: { taskIndex: number; task: string }[], tree: DatasetTreeProvider): Promise<void> {
   const items: TaskPickItem[] = [
     {
       actionKind: "action-add",
@@ -988,12 +988,12 @@ async function showMainMenu(service: DatasetService, datasetId: string, tasks: {
   if (!pick) return;
 
   if (pick.actionKind === "action-add") {
-    await runAddTask(service, datasetId, tasks);
+    await runAddTask(service, datasetId, tasks, tree);
     return;
   }
 
   if (pick.actionKind === "task" && pick.taskName) {
-    await showTaskActions(service, datasetId, pick.taskName, tasks);
+    await showTaskActions(service, datasetId, pick.taskName, tasks, tree);
   }
 }
 
@@ -1002,6 +1002,7 @@ async function showTaskActions(
   datasetId: string,
   taskName: string,
   tasks: { taskIndex: number; task: string }[],
+  tree: DatasetTreeProvider,
 ): Promise<void> {
   const items: TaskActionItem[] = [
     { actionKind: "action-rename", label: `$(edit) Rename "${taskName}"`, taskName },
@@ -1020,13 +1021,13 @@ async function showTaskActions(
   if (!pick) return;
 
   if (pick.actionKind === "action-rename") {
-    await runRenameTask(service, datasetId, taskName, tasks);
+    await runRenameTask(service, datasetId, taskName, tasks, tree);
   } else if (pick.actionKind === "action-reindex") {
-    await runReindexTask(service, datasetId, taskName, tasks);
+    await runReindexTask(service, datasetId, taskName, tasks, tree);
   } else if (pick.actionKind === "action-delete") {
-    await runDeleteTask(service, datasetId, taskName);
+    await runDeleteTask(service, datasetId, taskName, tree);
   } else if (pick.actionKind === "action-back") {
-    await showMainMenu(service, datasetId, tasks);
+    await showMainMenu(service, datasetId, tasks, tree);
   }
 }
 
@@ -1034,6 +1035,7 @@ async function runAddTask(
   service: DatasetService,
   datasetId: string,
   tasks: { taskIndex: number; task: string }[],
+  tree: DatasetTreeProvider,
 ): Promise<void> {
   const name = await vscode.window.showInputBox({
     prompt: "New task name",
@@ -1059,7 +1061,7 @@ async function runAddTask(
   // Refresh and show updated list.
   try {
     const refreshed = await service.getSnapshot(datasetId);
-    await showMainMenu(service, datasetId, refreshed.tasks);
+    await showMainMenu(service, datasetId, refreshed.tasks, tree);
   } catch {
     // If refresh fails, just return.
   }
@@ -1070,6 +1072,7 @@ async function runRenameTask(
   datasetId: string,
   oldName: string,
   tasks: { taskIndex: number; task: string }[],
+  tree: DatasetTreeProvider,
 ): Promise<void> {
   const newName = await vscode.window.showInputBox({
     prompt: `Rename task "${oldName}"`,
@@ -1096,7 +1099,7 @@ async function runRenameTask(
 
   try {
     const refreshed = await service.getSnapshot(datasetId);
-    await showMainMenu(service, datasetId, refreshed.tasks);
+    await showMainMenu(service, datasetId, refreshed.tasks, tree);
   } catch {
     // ignore
   }
@@ -1107,6 +1110,7 @@ async function runReindexTask(
   datasetId: string,
   taskName: string,
   tasks: { taskIndex: number; task: string }[],
+  tree: DatasetTreeProvider,
 ): Promise<void> {
   const curIdx = tasks.find((t) => t.task === taskName)?.taskIndex;
   const newIdxStr = await vscode.window.showInputBox({
@@ -1132,7 +1136,7 @@ async function runReindexTask(
   }
   try {
     const refreshed = await service.getSnapshot(datasetId);
-    await showMainMenu(service, datasetId, refreshed.tasks);
+    await showMainMenu(service, datasetId, refreshed.tasks, tree);
   } catch { /* ignore */ }
 }
 
@@ -1140,6 +1144,7 @@ async function runDeleteTask(
   service: DatasetService,
   datasetId: string,
   taskName: string,
+  tree: DatasetTreeProvider,
 ): Promise<void> {
   const confirm = await vscode.window.showWarningMessage(
     `Delete task "${taskName}"? This will also remove it from all episodes that reference it.`,
@@ -1160,7 +1165,7 @@ async function runDeleteTask(
 
   try {
     const refreshed = await service.getSnapshot(datasetId);
-    await showMainMenu(service, datasetId, refreshed.tasks);
+    await showMainMenu(service, datasetId, refreshed.tasks, tree);
   } catch {
     // ignore
   }
