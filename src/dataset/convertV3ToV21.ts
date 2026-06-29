@@ -328,7 +328,7 @@ function buildCanonicalSchema(info: LeRobotInfo, sampleRow: Record<string, unkno
   for (const [key, feat] of Object.entries(info.features)) {
     if (feat.dtype === "video") continue;
     const pt = dtypeToParquetType(feat.dtype);
-    const isArray = feat.shape && feat.shape.length >= 1 && feat.shape[0] >= 1;
+    const isArray = feat.shape && feat.shape.length >= 1 && feat.shape[0] > 1;
     fields[key] = { type: pt, repeated: isArray };
   }
 
@@ -343,6 +343,8 @@ function buildCanonicalSchema(info: LeRobotInfo, sampleRow: Record<string, unkno
       fields[key] = { type: "DOUBLE" };
     } else if (typeof v === "boolean") {
       fields[key] = { type: "BOOLEAN" };
+    } else if (typeof v === "string") {
+      fields[key] = { type: "UTF8" };
     }
   }
 
@@ -378,6 +380,7 @@ function dtypeToParquetType(dtype: string): string {
     case "double": return "DOUBLE";
     case "bool":
     case "boolean": return "BOOLEAN";
+    case "string": return "UTF8";
     default: return "DOUBLE";
   }
 }
